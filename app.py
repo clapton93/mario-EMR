@@ -349,7 +349,16 @@ with left_col:
     stt_text = st.text_area("내용 수정", value=st.session_state.transcription, height=200)
 
 with right_col:
-    st.subheader("2. 의료 차트 결과")
+    col2_1, col2_2 = st.columns([2, 1])
+    with col2_1:
+        st.subheader("2. 의료 차트 결과")
+    with col2_2:
+        if st.button("🔄 다음 환자", help="새로고침(F5) 없이 입력칸만 싹 비웁니다."):
+            st.session_state.transcription = ""
+            st.session_state.chart = ""
+            st.session_state.last_processed = None
+            st.rerun()
+            
     if st.button("✨ 전문 차트 생성"):
         if not gemini_key:
             st.error("Gemini API Key를 설정해주세요.")
