@@ -383,31 +383,108 @@ with right_col:
         except:
             st.info("💡 텍스트를 드래그하여 복사해 주세요. (서버 환경에서는 직접 복사가 제한될 수 있습니다.)")
 
-# Global CSS for Premium Look
+# Global CSS for Premium SaaS Look
 st.markdown("""
 <style>
-    .stApp { background-color: #ffffff; }
+    /* 웹 폰트 적용 (Pretendard) */
+    @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+    
+    html, body, [class*="css"] {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    }
+    
+    /* 전체 배경색 은은한 라이트 그레이로 변경 */
+    .stApp { 
+        background-color: #f8f9fa; 
+    }
+    
+    /* 버튼 공통 스타일 (프리미엄 그라데이션 및 애니메이션) */
     .stButton>button { 
         width: 100%; 
-        border-radius: 10px; 
-        font-weight: bold; 
-        height: 3em; 
-        background-color: #FF2400; 
+        border-radius: 12px; 
+        font-weight: 600; 
+        font-size: 16px;
+        height: 3.2em; 
+        background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%);
         color: white;
         border: none;
+        box-shadow: 0 4px 15px rgba(255, 75, 43, 0.3);
+        transition: all 0.3s ease;
     }
+    
+    /* 버튼 호버 (마우스 올렸을 때) 효과 */
     .stButton>button:hover {
-        background-color: #D11F00;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 75, 43, 0.4);
         color: white;
     }
+    
+    /* 버튼 클릭 시 효과 */
+    .stButton>button:active {
+        transform: translateY(1px);
+        box-shadow: 0 2px 10px rgba(255, 75, 43, 0.2);
+    }
+
+    /* 사이드바 로그아웃 같은 일반 버튼은 덜 튀게 설정 */
+    section[data-testid="stSidebar"] .stButton>button {
+        background: white;
+        color: #333;
+        border: 1px solid #ddd;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    section[data-testid="stSidebar"] .stButton>button:hover {
+        background: #f1f3f5;
+        border-color: #ccc;
+        transform: none;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    /* 텍스트 입력창 및 에어리어 (부드러운 그림자와 라운딩) */
     .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-        border-radius: 10px;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+        padding: 10px 15px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
+    .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
+        border-color: #FF4B2B;
+        box-shadow: 0 0 0 2px rgba(255, 75, 43, 0.2);
+    }
+    
+    /* Expander (아코디언 메뉴) 스타일링 */
     div[data-testid="stExpander"] {
-        border-radius: 10px;
+        border-radius: 16px;
         background-color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 1px solid #f1f3f5;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        overflow: hidden;
+        margin-bottom: 1rem;
     }
-    h1, h2, h3 { color: #333; }
+    
+    /* 탭 스타일링 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    
+    /* 제목 텍스트 색상 및 간격 조정 */
+    h1, h2, h3 { 
+        color: #1a1b1e; 
+        letter-spacing: -0.5px;
+    }
+    
+    /* 로그인 컨테이너 등 중앙 박스 디자인 */
+    div[data-testid="stVerticalBlock"] > div > div > div[data-testid="stVerticalBlock"] {
+        background: white;
+        padding: 2rem;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+    }
 </style>
 """, unsafe_allow_html=True)
