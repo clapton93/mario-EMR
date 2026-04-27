@@ -268,20 +268,21 @@ with st.sidebar:
     
     st.header("⚙️ 설정 (Settings)")
     
-    with st.expander("🔑 API 키 설정"):
-        gemini_key = st.text_input("Gemini API Key", value=GEMINI_API_KEY, type="password")
-        dg_key = st.text_input("Deepgram API Key", value=DEEPGRAM_API_KEY, type="password")
-        if st.button("API 키 저장"):
-            save_key("gemini_api_key.txt", gemini_key)
-            save_key("deepgram_api_key.txt", dg_key)
-            st.success("저장 완료!")
+    if st.session_state.get("user_id") == "admin":
+        with st.expander("🔑 API 키 설정 (관리자 전용)"):
+            gemini_key = st.text_input("Gemini API Key", value=GEMINI_API_KEY, type="password")
+            dg_key = st.text_input("Deepgram API Key", value=DEEPGRAM_API_KEY, type="password")
+            if st.button("API 키 저장"):
+                save_key("gemini_api_key.txt", gemini_key)
+                save_key("deepgram_api_key.txt", dg_key)
+                st.success("저장 완료!")
 
-    with st.expander("📝 차팅 지침 커스텀 (Prompt)"):
-        st.info("AI가 차트를 작성하는 규칙을 직접 수정할 수 있습니다.")
-        new_prompt = st.text_area("시스템 프롬프트", value=st.session_state.custom_prompt, height=400)
-        if st.button("지침 저장"):
-            st.session_state.custom_prompt = new_prompt
-            save_user_profile(st.session_state.user_id, new_prompt)
+        with st.expander("📝 차팅 지침 커스텀 (관리자 전용)"):
+            st.info("AI가 차트를 작성하는 규칙을 직접 수정할 수 있습니다.")
+            new_prompt = st.text_area("시스템 프롬프트", value=st.session_state.custom_prompt, height=400)
+            if st.button("지침 저장"):
+                st.session_state.custom_prompt = new_prompt
+                save_user_profile(st.session_state.user_id, new_prompt)
 
     st.divider()
     # (중복된 진료 날짜 입력창 제거됨)
