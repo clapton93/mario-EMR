@@ -1,0 +1,10 @@
+streamlit
+audio-recorder-streamlit
+SpeechRecognition
+requests
+pyperclip
+google-generativeai
+pydub
+groq
+deepgram-sdk==3.*
+supabase

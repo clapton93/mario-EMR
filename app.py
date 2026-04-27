@@ -1,0 +1,404 @@
+import streamlit as st
+import os
+import io
+import time
+import pydub
+import google.generativeai as genai
+from deepgram import DeepgramClient, PrerecordedOptions
+import pyperclip
+import shutil
+import requests
+
+# --- Supabase Configuration (REST API Mode) ---
+SUPABASE_URL = "https://iqtggenzwnzltbwfqqdf.supabase.co/rest/v1"
+SUPABASE_KEY = "sb_publishable_8aeTO3X-R0ZeMTS26tDOzA_81ILuvYE"
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
+
+# --- Constants & Configuration ---
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+RECORDS_DIR = os.path.join(APP_DIR, "records")
+AUDIO_DIR = os.path.join(RECORDS_DIR, "audio")
+CLINIC_CHARTS_DIR = os.path.join(RECORDS_DIR, "charts")
+
+# Ensure directories exist
+try:
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    os.makedirs(CLINIC_CHARTS_DIR, exist_ok=True)
+except Exception as e:
+    st.warning(f"폴더 생성 권한 오류: {e}")
+
+MARIO_LOGO_FILENAME = "cute_mario_face_icon_1776402340674.png"
+MARIO_LOGO = os.path.join(APP_DIR, MARIO_LOGO_FILENAME)
+
+# --- FFmpeg Setup ---
+if shutil.which("ffmpeg"):
+    pydub.AudioSegment.converter = "ffmpeg"
+else:
+    ffmpeg_local_path = r"C:\Users\WD\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.WinGet.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
+    if os.path.exists(ffmpeg_local_path):
+        os.environ["PATH"] += os.pathsep + ffmpeg_local_path
+        pydub.AudioSegment.converter = os.path.join(ffmpeg_local_path, "ffmpeg.exe")
+
+st.set_page_config(page_title="Mario Scribe 2.0", page_icon=MARIO_LOGO if os.path.exists(MARIO_LOGO) else None, layout="wide")
+
+# --- Helper Functions ---
+def get_api_key(key_name, filename):
+    try:
+        if key_name in st.secrets: 
+            return st.secrets[key_name]
+    except Exception:
+        pass
+    
+    env_val = os.environ.get(key_name)
+    if env_val: return env_val
+    
+    path = os.path.join(APP_DIR, filename)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f: return f.read().strip()
+        except: pass
+    return ""
+
+
+def save_key(filename, key):
+    try:
+        with open(os.path.join(APP_DIR, filename), "w", encoding="utf-8") as f:
+            f.write(key)
+    except: pass
+
+def load_user_profile(user_id):
+    """REST API를 사용해 DB에서 사용자의 맞춤 프롬프트를 불러옵니다."""
+    try:
+        url = f"{SUPABASE_URL}/profiles?user_id=eq.{user_id}&select=custom_prompt"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200 and response.json():
+            return response.json()[0].get("custom_prompt")
+    except Exception as e:
+        st.error(f"프로필 로드 실패: {e}")
+    return None
+
+def save_user_profile(user_id, prompt):
+    """REST API를 사용해 DB에 사용자의 맞춤 프롬프트를 저장합니다 (Upsert)."""
+    try:
+        url = f"{SUPABASE_URL}/profiles"
+        data = {"user_id": user_id, "custom_prompt": prompt}
+        # Upsert headers
+        upsert_headers = HEADERS.copy()
+        upsert_headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        
+        response = requests.post(url, headers=upsert_headers, json=data)
+        if response.status_code in [200, 201, 204]:
+            st.success("DB에 설정이 안전하게 저장되었습니다!")
+        else:
+            st.error(f"DB 저장 실패 ({response.status_code}): {response.text}")
+    except Exception as e:
+        st.error(f"DB 연결 실패: {e}")
+
+# Initialize session state
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+def authenticate_user(email, password):
+    url = f"https://iqtggenzwnzltbwfqqdf.supabase.co/auth/v1/token?grant_type=password"
+    data = {"email": email, "password": password}
+    response = requests.post(url, headers={"apikey": SUPABASE_KEY}, json=data)
+    if response.status_code == 200:
+        return True, response.json()
+    return False, response.json().get("error_description", "로그인 실패")
+
+def register_user(email, password):
+    url = f"https://iqtggenzwnzltbwfqqdf.supabase.co/auth/v1/signup"
+    data = {"email": email, "password": password}
+    response = requests.post(url, headers={"apikey": SUPABASE_KEY}, json=data)
+    if response.status_code == 200:
+        return True, "회원가입 성공! 이제 로그인해 주세요."
+    return False, response.json().get("msg", "회원가입 실패")
+
+def login():
+    st.markdown("""
+        <div style='text-align: center; padding: 50px;'>
+            <h1 style='color: #FF2400;'>Mario Scribe 2.0</h1>
+            <p>SaaS 모드: 클라우드 인증 시스템</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
+            
+            with tab1:
+                with st.form("login_form"):
+                    user_email = st.text_input("이메일 주소")
+                    user_pw = st.text_input("비밀번호", type="password")
+                    submit = st.form_submit_button("로그인")
+                    
+                    if submit:
+                        if user_email == "admin" and user_pw == "mario1234":
+                            # 임시 어드민 로직 유지 (비상용)
+                            st.session_state.authenticated = True
+                            st.session_state.user_id = "admin"
+                            saved_prompt = load_user_profile("admin")
+                            if saved_prompt: st.session_state.custom_prompt = saved_prompt
+                            st.rerun()
+                        else:
+                            success, result = authenticate_user(user_email, user_pw)
+                            if success:
+                                st.session_state.authenticated = True
+                                st.session_state.user_id = user_email
+                                # DB에서 커스텀 프롬프트 로드
+                                saved_prompt = load_user_profile(user_email)
+                                if saved_prompt:
+                                    st.session_state.custom_prompt = saved_prompt
+                                st.success("로그인 성공!")
+                                st.rerun()
+                            else:
+                                st.error(f"오류: {result}")
+            
+            with tab2:
+                with st.form("signup_form"):
+                    new_email = st.text_input("이메일 주소 (아이디로 사용)")
+                    new_pw = st.text_input("비밀번호 (6자리 이상)", type="password")
+                    new_pw_confirm = st.text_input("비밀번호 확인", type="password")
+                    signup_submit = st.form_submit_button("가입하기")
+                    
+                    if signup_submit:
+                        if new_pw != new_pw_confirm:
+                            st.error("비밀번호가 일치하지 않습니다.")
+                        elif len(new_pw) < 6:
+                            st.error("비밀번호는 6자리 이상이어야 합니다.")
+                        else:
+                            success, msg = register_user(new_email, new_pw)
+                            if success:
+                                st.success(msg)
+                            else:
+                                st.error(f"오류: {msg}")
+
+if not st.session_state.authenticated:
+    login()
+    st.stop()
+
+# --- Main App Logic (Authenticated) ---
+
+# Initialize session state for app
+if "transcription" not in st.session_state: st.session_state.transcription = ""
+if "chart" not in st.session_state: st.session_state.chart = ""
+if "last_processed" not in st.session_state: st.session_state.last_processed = None
+
+# --- API Keys ---
+GEMINI_API_KEY = get_api_key("GEMINI_API_KEY", "gemini_api_key.txt")
+DEEPGRAM_API_KEY = get_api_key("DEEPGRAM_API_KEY", "deepgram_api_key.txt")
+
+# --- Prompt Construction ---
+today_date = st.sidebar.text_input("진료 날짜", value=time.strftime("%Y.%m.%d."))
+
+DEFAULT_PROMPT = f"""당신은 숙련된 한의사를 돕는 전문 의료 서기입니다.
+실제 진료 상황이나 구술 내용을 바탕으로 의료 차트를 작성하세요.
+
+[지침]
+1. 한국어로 작성하되, 섹션 제목은 '#' 바로 뒤에 공백 없이 적어 진단명을 기입합니다.
+   - **[헤더 접두어]** 목(Posterior neck pain)과 허리(Low back pain)는 중앙 척추 라인이므로 헤더에 방향 접두어를 생략합니다. 그 외 어깨 등 사지 관절 부위는 환자의 증상 방향에 따라 **#Rt, #Lt, #Both** 등의 접두어를 붙여 작성하세요. (예: #Rt shoulder pain)
+   - 두통(#Headache), 어지럼증(#Dizziness), 오심(#Nausea)은 항상 각각 독립된 섹션으로 작성하되, 반드시 **요통이나 경추통 같은 근골격계 통증 섹션들을 먼저 작성한 후 그 아래에 위치시켜주세요. (통증 섹션이 항상 두통/어지럼증/오심 섹션보다 위에 와야 합니다.)**
+3. 각 진단명 하단에는 '부위', '양상', '패턴', '동반증상' 등을 작성하세요.
+   - 단, #Dizziness와 #Nausea 섹션은 '양상' 항목만 작성합니다.
+4. **[구조적 핵심] o/s와 ROM 결과는 모든 진단 섹션(두통/어지럼증/오심 포함)이 끝난 후 차트의 가장 아랫부분에 통합하여 작성하세요.**
+5. '부위' 섹션은 '좌', '우', '좌/우', '요천추' 등 핵심 키워드만 사용하여 최대한 간결하게 작성하세요.
+   - 특히 허리 통증의 경우, 좌측이나 우측의 통증이 '동반증상'의 방사통으로 충분히 표현된다면 '부위'에는 **'요천추'** 등 주된 통증 부위만 기입하고 부가적인 부위는 생략하세요.
+   - **양측 모두 아픈 경우 '중앙/양측' 대신 '좌/우'를 사용하세요.**
+6. '양상' 섹션은 '묵직함', '쑤심', '뻐근함', '알싸함' 등의 한의학 용어를 우선적으로 사용하세요.
+7. '패턴' 섹션은 '지속적', '간헐적' 등 추상적인 빈도를 제외하고, **특정 동작 시 통증이 심해지는 양상을 구체적으로 기술하세요.** (괄호 없이 작성합니다.)
+   - 예: **고개를 들 때 통증 심해짐**, **허리를 숙일 때 통증 심해짐**
+8. '동반증상' 섹션은 각 부위별 체크 템플릿을 사용하되, (좌/우)나 (둔부/하지)와 같이 구분된 항목은 음성에서 확인된 결과에 따라 (+/+), (+/-), (-/+), (-/-)와 같이 각각의 유무를 명확히 표시하세요.
+   - 예: 방사통(좌/우)(-/-) / 저림(좌/우)(-/-) / 감각저하(-) / 근력저하(-)
+9. o/s(사고 상황) 섹션은 교통사고(TA)의 경우 아래의 상세 형식을 엄격히 따르세요.
+   - 형식: o/s - [날짜]. [장소]에서 [상황]한 TA([충돌유형], [본인위치])(환자진술에 근거함)
+   - 예: 시청사거리 상무지구 방향 교차로에서 주행 중 옆 차선에서 끼어들면서 추돌한 TA(car+car, 운전석)(환자진술에 근거함)
+10. **[핵심] 임상 용어 및 ROM 작성**:
+    - **ROM 결과는 반드시 음성 내용에서 명시적으로 확인된 제한 사항만 기입하세요.** 확인되지 않은 동작(굴곡, 회전 등)을 임의로 추가하지 마세요.
+    - 예: 신전 시에만 통증이 있다면 '신전 제한'으로만 적습니다.
+    - 교통사고 상황 묘사 시 '후방에서 추돌한'에 국한되지 말고, '끼어들면서 추돌한', '정면 충돌한' 등 실제 상황을 정확히 반영하세요.
+11. 환자가 '어제', '오늘' 등으로 말하면 {today_date} 기준으로 정확한 날짜를 계산하여 기입하세요.
+12. **[어깨 통증 부위 세분화]** 어깨 통증(#Shoulder pain)의 경우 '부위' 섹션은 반드시 **'전면', '측면', '후면', '승모근'** 중 환자의 증상과 가장 일치하는 하나를 선택하여 작성하세요.
+13. **[지명 및 용어 보정]** 음성 인식 오류로 보이는 지명이나 단어는 문맥에 맞게 보정하세요. (예: 휘청 사거리 -> 시청사거리)
+
+[출력 형식 예시]
+#Posterior neck pain
+부위: 좌/우
+양상: 뻐근함
+패턴: 고개를 들 때 통증 심해짐
+동반증상: 방사통(좌/우)(-/-) / 저림(좌/우)(-/-) / 근력저하(-)
+
+#Low back pain
+부위: 요천추
+양상: 뻐근함 / 찌름
+패턴: 허리를 펼 때 통증 심해짐
+동반증상: 방사통(둔부/하지)(-/-) / 저림(좌/우)(-/-) / 감각저하(-) / 근력저하(-)
+
+#Both shoulder pain
+부위: 승모근
+양상: 뻐근함
+패턴: 지속적
+동반증상: 방사통(좌/우)(-/-) / 저림(좌/우)(-/-)
+
+#Headache
+부위: 후두부
+양상: 욱신거림
+"""
+
+if "custom_prompt" not in st.session_state:
+    st.session_state.custom_prompt = DEFAULT_PROMPT
+
+# --- App UI ---
+col_icon, col_title = st.columns([1, 8])
+with col_icon:
+    if os.path.exists(MARIO_LOGO):
+        st.image(MARIO_LOGO, width=100)
+with col_title:
+    st.title("Mario Scribe 2.0")
+    st.markdown(f"### **반갑습니다, {st.session_state.get('user_id', 'admin')} 원장님!**")
+
+# Sidebar
+with st.sidebar:
+    st.image(MARIO_LOGO, width=100) if os.path.exists(MARIO_LOGO) else None
+    
+    st.header("⚙️ 설정 (Settings)")
+    
+    with st.expander("🔑 API 키 설정"):
+        gemini_key = st.text_input("Gemini API Key", value=GEMINI_API_KEY, type="password")
+        dg_key = st.text_input("Deepgram API Key", value=DEEPGRAM_API_KEY, type="password")
+        if st.button("API 키 저장"):
+            save_key("gemini_api_key.txt", gemini_key)
+            save_key("deepgram_api_key.txt", dg_key)
+            st.success("저장 완료!")
+
+    with st.expander("📝 차팅 지침 커스텀 (Prompt)"):
+        st.info("AI가 차트를 작성하는 규칙을 직접 수정할 수 있습니다.")
+        new_prompt = st.text_area("시스템 프롬프트", value=st.session_state.custom_prompt, height=400)
+        if st.button("지침 저장"):
+            st.session_state.custom_prompt = new_prompt
+            save_user_profile(st.session_state.user_id, new_prompt)
+
+    st.divider()
+    # (중복된 진료 날짜 입력창 제거됨)
+    auto_analyze = st.checkbox("필사 완료 후 자동 차트 생성", value=True)
+    
+    st.divider()
+    if st.button("🚪 로그아웃", use_container_width=True):
+        st.session_state.authenticated = False
+        st.rerun()
+
+# Main Columns
+left_col, right_col = st.columns(2)
+
+with left_col:
+    st.subheader("1. 환자 정보 및 음성 입력")
+    p_name = st.text_input("환자 이름", placeholder="이름을 입력하세요")
+    
+    tab1, tab2 = st.tabs(["🎤 실시간 녹음", "📁 파일 업로드"])
+    raw_audio = None
+    
+    with tab1:
+        audio_input_data = st.audio_input("진료 내용 녹음")
+        if audio_input_data:
+            raw_audio = audio_input_data.read()
+            st.audio(raw_audio)
+            
+    with tab2:
+        uploaded = st.file_uploader("음성 파일 선택", type=["mp3", "wav", "m4a", "ogg"])
+        if uploaded:
+            raw_audio = uploaded.read()
+            
+    if raw_audio:
+        audio_hash = hash(raw_audio)
+        if st.session_state.last_processed != audio_hash:
+            st.session_state.last_processed = audio_hash
+            
+            if not dg_key:
+                st.error("Deepgram API Key를 설정해주세요.")
+            else:
+                with st.spinner("음성 변환 중..."):
+                    try:
+                        dg_client = DeepgramClient(dg_key)
+                        options = PrerecordedOptions(model="nova-2", smart_format=True, language="ko")
+                        res = dg_client.listen.rest.v("1").transcribe_file({"buffer": raw_audio}, options)
+                        transcript = res.results.channels[0].alternatives[0].transcript
+                        
+                        if not transcript.strip():
+                            st.warning("음성 인식 결과가 없습니다.")
+                        else:
+                            st.session_state.transcription = transcript
+                            
+                            if auto_analyze and gemini_key:
+                                with st.spinner("차트 작성 중..."):
+                                    try:
+                                        genai.configure(api_key=gemini_key)
+                                        model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
+                                        response = model.generate_content(transcript)
+                                        st.session_state.chart = response.text
+                                    except Exception as e:
+                                        st.error(f"AI 오류: {e}")
+                    except Exception as e:
+                        st.error(f"STT 오류: {e}")
+
+    st.markdown("**필사 내용**")
+    stt_text = st.text_area("내용 수정", value=st.session_state.transcription, height=200)
+
+with right_col:
+    st.subheader("2. 의료 차트 결과")
+    if st.button("✨ 전문 차트 생성"):
+        if not gemini_key:
+            st.error("Gemini API Key를 설정해주세요.")
+        elif not stt_text:
+            st.warning("분석할 내용이 없습니다.")
+        else:
+            with st.spinner("AI 분석 중..."):
+                try:
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
+                    response = model.generate_content(stt_text)
+                    st.session_state.chart = response.text
+                except Exception as e:
+                    st.error(f"AI 오류: {e}")
+
+    chart_out = st.text_area("차트 내용", value=st.session_state.get("chart", ""), height=600)
+    if chart_text := st.session_state.get("chart", ""):
+        try:
+            if st.button("📋 클립보드로 복사"):
+                pyperclip.copy(chart_text)
+                st.success("복사되었습니다!")
+        except:
+            st.info("💡 텍스트를 드래그하여 복사해 주세요. (서버 환경에서는 직접 복사가 제한될 수 있습니다.)")
+
+# Global CSS for Premium Look
+st.markdown("""
+<style>
+    .stApp { background-color: #ffffff; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 10px; 
+        font-weight: bold; 
+        height: 3em; 
+        background-color: #FF2400; 
+        color: white;
+        border: none;
+    }
+    .stButton>button:hover {
+        background-color: #D11F00;
+        color: white;
+    }
+    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
+        border-radius: 10px;
+    }
+    div[data-testid="stExpander"] {
+        border-radius: 10px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3 { color: #333; }
+</style>
+""", unsafe_allow_html=True)
