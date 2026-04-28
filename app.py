@@ -100,6 +100,28 @@ def save_user_profile(user_id, prompt):
     except Exception as e:
         st.error(f"DB 연결 실패: {e}")
 
+def save_chart_log(user_id, transcription, chart):
+    """REST API를 사용해 chart_logs 테이블에 기록을 저장합니다."""
+    try:
+        url = f"{SUPABASE_URL}/chart_logs"
+        data = {"user_id": user_id, "transcription": transcription, "chart": chart}
+        response = requests.post(url, headers=HEADERS, json=data)
+        if response.status_code not in [200, 201, 204]:
+            print(f"Chart log save failed: {response.text}")
+    except Exception as e:
+        print(f"Chart log connection error: {e}")
+
+def fetch_chart_logs(limit=50):
+    """REST API를 사용해 최근 chart_logs를 가져옵니다."""
+    try:
+        url = f"{SUPABASE_URL}/chart_logs?select=*&order=created_at.desc&limit={limit}"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"로그 조회 실패: {e}")
+    return []
+
 # Initialize session state
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -288,6 +310,23 @@ with st.sidebar:
                 st.session_state.custom_prompt = new_prompt
                 save_user_profile(st.session_state.user_id, new_prompt)
 
+        with st.expander("📊 유저 사용 기록 조회 (관리자 전용)"):
+            if st.button("기록 새로고침"):
+                st.session_state.admin_logs = fetch_chart_logs()
+            
+            logs = st.session_state.get("admin_logs", [])
+            if logs:
+                st.write(f"최근 {len(logs)}개의 기록이 있습니다.")
+                for log in logs:
+                    date_str = log.get('created_at', '')[:10] if log.get('created_at') else ''
+                    with st.expander(f"[{date_str}] {log.get('user_id', 'unknown')}"):
+                        st.markdown("**필사 내용:**")
+                        st.text(log.get("transcription", ""))
+                        st.markdown("**차트 내용:**")
+                        st.text(log.get("chart", ""))
+            else:
+                st.info("조회된 기록이 없거나 새로고침 버튼을 눌러주세요.")
+
     st.divider()
     # (중복된 진료 날짜 입력창 제거됨)
     auto_analyze = st.checkbox("필사 완료 후 자동 차트 생성", value=True)
@@ -349,6 +388,7 @@ with left_col:
                                         model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
                                         response = model.generate_content(transcript)
                                         st.session_state.chart = response.text
+                                        save_chart_log(st.session_state.get("user_id", "unknown"), transcript, response.text)
                                     except Exception as e:
                                         st.error(f"AI 오류: {e}")
                     except Exception as e:
@@ -382,6 +422,7 @@ with right_col:
                     model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
                     response = model.generate_content(stt_text)
                     st.session_state.chart = response.text
+                    save_chart_log(st.session_state.get("user_id", "unknown"), stt_text, response.text)
                 except Exception as e:
                     st.error(f"AI 오류: {e}")
 
