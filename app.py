@@ -8,6 +8,7 @@ from deepgram import DeepgramClient, PrerecordedOptions
 import pyperclip
 import shutil
 import requests
+import streamlit.components.v1 as components
 
 # --- Supabase Configuration (REST API Mode) ---
 SUPABASE_URL = "https://iqtggenzwnzltbwfqqdf.supabase.co/rest/v1"
@@ -366,7 +367,7 @@ with right_col:
     with col2_1:
         st.subheader("2. 의료 차트 결과")
     with col2_2:
-        if st.button("🔄 다음 환자", help="새로고침(F5) 없이 입력칸만 싹 비웁니다."):
+        if st.button("🔄 다음 환자(Alt+N)", help="새로고침(F5) 없이 입력칸만 싹 비웁니다. 단축키: Alt + N"):
             st.session_state.transcription = ""
             st.session_state.chart = ""
             st.session_state.last_processed = None
@@ -502,3 +503,23 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# --- Keyboard Shortcuts Injection ---
+components.html(
+    """
+<script>
+const doc = window.parent.document;
+doc.addEventListener('keydown', function(e) {
+    if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+        const buttons = Array.from(doc.querySelectorAll('button'));
+        const nextButton = buttons.find(el => el.innerText.includes('다음 환자'));
+        if (nextButton) {
+            nextButton.click();
+        }
+    }
+});
+</script>
+""",
+    height=0,
+    width=0,
+)
