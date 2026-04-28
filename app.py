@@ -189,6 +189,7 @@ if not st.session_state.authenticated:
 if "transcription" not in st.session_state: st.session_state.transcription = ""
 if "chart" not in st.session_state: st.session_state.chart = ""
 if "last_processed" not in st.session_state: st.session_state.last_processed = None
+if "widget_key" not in st.session_state: st.session_state.widget_key = 0
 
 # --- API Keys ---
 GEMINI_API_KEY = get_api_key("GEMINI_API_KEY", "gemini_api_key.txt")
@@ -300,21 +301,21 @@ left_col, right_col = st.columns(2)
 
 with left_col:
     st.subheader("1. 환자 정보 및 음성 입력")
-    p_name = st.text_input("환자 이름", placeholder="이름을 입력하세요")
+    p_name = st.text_input("환자 이름", placeholder="이름을 입력하세요", key=f"p_name_{st.session_state.widget_key}")
     
     tab1, tab2 = st.tabs(["🎤 실시간 녹음", "📁 파일 업로드"])
     raw_audio = None
     audio_mime = None
     
     with tab1:
-        audio_input_data = st.audio_input("진료 내용 녹음")
+        audio_input_data = st.audio_input("진료 내용 녹음", key=f"audio_{st.session_state.widget_key}")
         if audio_input_data:
             raw_audio = audio_input_data.read()
             audio_mime = audio_input_data.type
             st.audio(raw_audio)
             
     with tab2:
-        uploaded = st.file_uploader("음성 파일 선택", type=["mp3", "wav", "m4a", "ogg"])
+        uploaded = st.file_uploader("음성 파일 선택", type=["mp3", "wav", "m4a", "ogg"], key=f"file_{st.session_state.widget_key}")
         if uploaded:
             raw_audio = uploaded.read()
             audio_mime = uploaded.type
@@ -369,6 +370,7 @@ with right_col:
             st.session_state.transcription = ""
             st.session_state.chart = ""
             st.session_state.last_processed = None
+            st.session_state.widget_key += 1
             st.rerun()
             
     if st.button("✨ 전문 차트 생성"):
