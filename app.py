@@ -268,6 +268,8 @@ with st.sidebar:
     
     st.header("⚙️ 설정 (Settings)")
     
+    gemini_key = GEMINI_API_KEY
+    dg_key = DEEPGRAM_API_KEY
     if st.session_state.get("user_id") == "admin":
         with st.expander("🔑 API 키 설정 (관리자 전용)"):
             gemini_key = st.text_input("Gemini API Key", value=GEMINI_API_KEY, type="password")
@@ -302,17 +304,20 @@ with left_col:
     
     tab1, tab2 = st.tabs(["🎤 실시간 녹음", "📁 파일 업로드"])
     raw_audio = None
+    audio_mime = None
     
     with tab1:
         audio_input_data = st.audio_input("진료 내용 녹음")
         if audio_input_data:
             raw_audio = audio_input_data.read()
+            audio_mime = audio_input_data.type
             st.audio(raw_audio)
             
     with tab2:
         uploaded = st.file_uploader("음성 파일 선택", type=["mp3", "wav", "m4a", "ogg"])
         if uploaded:
             raw_audio = uploaded.read()
+            audio_mime = uploaded.type
             
     if raw_audio:
         audio_hash = hash(raw_audio)
@@ -321,16 +326,21 @@ with left_col:
             
             if not dg_key:
                 st.error("Deepgram API Key를 설정해주세요.")
+                st.session_state.last_processed = None
             else:
                 with st.spinner("음성 변환 중..."):
                     try:
                         dg_client = DeepgramClient(dg_key)
                         options = PrerecordedOptions(model="nova-2", smart_format=True, language="ko")
-                        res = dg_client.listen.rest.v("1").transcribe_file({"buffer": raw_audio}, options)
+                        payload = {"buffer": raw_audio}
+                        if audio_mime:
+                            payload["mimetype"] = audio_mime
+                        res = dg_client.listen.rest.v("1").transcribe_file(payload, options)
                         transcript = res.results.channels[0].alternatives[0].transcript
                         
                         if not transcript.strip():
                             st.warning("음성 인식 결과가 없습니다.")
+                            st.session_state.last_processed = None
                         else:
                             st.session_state.transcription = transcript
                             
@@ -345,6 +355,7 @@ with left_col:
                                         st.error(f"AI 오류: {e}")
                     except Exception as e:
                         st.error(f"STT 오류: {e}")
+                        st.session_state.last_processed = None
 
     st.markdown("**필사 내용**")
     stt_text = st.text_area("내용 수정", value=st.session_state.transcription, height=200)
