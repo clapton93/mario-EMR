@@ -311,15 +311,13 @@ with left_col:
     with tab1:
         audio_input_data = st.audio_input("진료 내용 녹음", key=f"audio_{st.session_state.widget_key}")
         if audio_input_data:
-            raw_audio = audio_input_data.read()
-            audio_mime = audio_input_data.type
+            raw_audio = audio_input_data.getvalue()
             st.audio(raw_audio)
             
     with tab2:
         uploaded = st.file_uploader("음성 파일 선택", type=["mp3", "wav", "m4a", "ogg"], key=f"file_{st.session_state.widget_key}")
         if uploaded:
-            raw_audio = uploaded.read()
-            audio_mime = uploaded.type
+            raw_audio = uploaded.getvalue()
             
     if raw_audio:
         audio_hash = hash(raw_audio)
@@ -333,10 +331,8 @@ with left_col:
                 with st.spinner("음성 변환 중..."):
                     try:
                         dg_client = DeepgramClient(dg_key)
-                        options = PrerecordedOptions(model="nova-2", smart_format=True, language="ko")
+                        options = PrerecordedOptions(model="nova-2", smart_format=True, language="ko", filler_words=True)
                         payload = {"buffer": raw_audio}
-                        if audio_mime:
-                            payload["mimetype"] = audio_mime
                         res = dg_client.listen.rest.v("1").transcribe_file(payload, options)
                         transcript = res.results.channels[0].alternatives[0].transcript
                         
