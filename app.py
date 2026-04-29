@@ -4,7 +4,7 @@ import io
 import time
 import pydub
 import google.generativeai as genai
-from deepgram import DeepgramClient, PrerecordedOptions
+# from deepgram import DeepgramClient, PrerecordedOptions  # SDK 대신 requests 직접 호출 사용
 import pyperclip
 import shutil
 import requests
@@ -379,35 +379,55 @@ with left_col:
             else:
                 with st.spinner("음성 변환 중..."):
                     try:
-                        dg_client = DeepgramClient(dg_key)
-                        options = PrerecordedOptions(model="nova-2", smart_format=True, language="ko", filler_words=True)
-                        payload = {"buffer": raw_audio}
-                        res = dg_client.listen.rest.v("1").transcribe_file(payload, options)
-                        transcript = res.results.channels[0].alternatives[0].transcript
+                        # Deepgram SDK 대신 직접 REST API 호출 (인코딩 문제 우회)
+                        headers = {
+                            "Authorization": f"Token {dg_key}",
+                            "Content-Type": "application/octet-stream"
+                        }
+                        params = {
+                            "model": "nova-2",
+                            "smart_format": "true",
+                            "language": "ko",
+                            "filler_words": "true"
+                        }
                         
-                        if not transcript.strip():
-                            st.warning("음성 인식 결과가 없습니다.")
+                        response = requests.post(
+                            "https://api.deepgram.com/v1/listen",
+                            headers=headers,
+                            params=params,
+                            data=raw_audio,
+                            timeout=60
+                        )
+                        
+                        if response.status_code != 200:
+                            st.error(f"Deepgram API 오류 ({response.status_code}): {response.text}")
                             st.session_state.last_processed = None
                         else:
-                            st.session_state.transcription = transcript
+                            res_json = response.json()
+                            transcript = res_json.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0].get("transcript", "")
                             
-                            if auto_analyze and gemini_key:
-                                with st.spinner("차트 작성 중..."):
-                                    try:
-                                        genai.configure(api_key=gemini_key)
-                                        model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
-                                        response = model.generate_content(transcript)
-                                        st.session_state.chart = response.text
-                                        save_chart_log(st.session_state.get("user_id", "unknown"), transcript, response.text)
-                                    except Exception as e:
-                                        st.error(f"AI 오류: {e}")
+                            if not transcript.strip():
+                                st.warning("음성 인식 결과가 없습니다.")
+                                st.session_state.last_processed = None
+                            else:
+                                st.session_state.transcription = transcript
+                                
+                                if auto_analyze and gemini_key:
+                                    with st.spinner("차트 작성 중..."):
+                                        try:
+                                            genai.configure(api_key=gemini_key)
+                                            model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
+                                            response_ai = model.generate_content(transcript)
+                                            st.session_state.chart = response_ai.text
+                                            save_chart_log(st.session_state.get("user_id", "unknown"), transcript, response_ai.text)
+                                        except Exception as e:
+                                            st.error(f"AI 오류: {e}")
                     except Exception as e:
                         error_msg = str(e)
-                        # 인코딩 오류가 발생한 경우를 대비한 안전한 처리
                         try:
-                            st.error(f"STT 오류: {error_msg}")
+                            st.error(f"STT 오류 상세: {error_msg}")
                         except:
-                            st.error("STT 과정에서 알 수 없는 인코딩 오류가 발생했습니다.")
+                            st.error("STT 과정에서 처리할 수 없는 인코딩 오류가 발생했습니다.")
                         st.session_state.last_processed = None
 
     st.markdown("**필사 내용**")
