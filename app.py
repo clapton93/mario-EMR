@@ -9,6 +9,16 @@ import pyperclip
 import shutil
 import requests
 import streamlit.components.v1 as components
+import sys
+
+# --- Environment Setup (Windows Encoding Fix) ---
+if sys.stdout and sys.stdout.encoding != 'utf-8':
+    try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    except: pass
+if sys.stderr and sys.stderr.encoding != 'utf-8':
+    try: sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    except: pass
+
 
 # --- Supabase Configuration (REST API Mode) ---
 SUPABASE_URL = "https://iqtggenzwnzltbwfqqdf.supabase.co/rest/v1"
@@ -107,9 +117,9 @@ def save_chart_log(user_id, transcription, chart):
         data = {"user_id": user_id, "transcription": transcription, "chart": chart}
         response = requests.post(url, headers=HEADERS, json=data)
         if response.status_code not in [200, 201, 204]:
-            print(f"Chart log save failed: {response.text}")
+            st.error(f"차트 로그 저장 실패: {response.text}")
     except Exception as e:
-        print(f"Chart log connection error: {e}")
+        st.warning(f"차트 로그 서버 연결 오류: {e}")
 
 def fetch_chart_logs(limit=50):
     """REST API를 사용해 최근 chart_logs를 가져옵니다."""
@@ -392,7 +402,12 @@ with left_col:
                                     except Exception as e:
                                         st.error(f"AI 오류: {e}")
                     except Exception as e:
-                        st.error(f"STT 오류: {e}")
+                        error_msg = str(e)
+                        # 인코딩 오류가 발생한 경우를 대비한 안전한 처리
+                        try:
+                            st.error(f"STT 오류: {error_msg}")
+                        except:
+                            st.error("STT 과정에서 알 수 없는 인코딩 오류가 발생했습니다.")
                         st.session_state.last_processed = None
 
     st.markdown("**필사 내용**")
