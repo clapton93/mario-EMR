@@ -379,9 +379,17 @@ with left_col:
             else:
                 with st.spinner("음성 변환 중..."):
                     try:
+                        # API 키에 한글 등 비정상 문자가 포함되어 있는지 검사 (인코딩 오류 원인)
+                        try:
+                            dg_key.encode('ascii')
+                        except UnicodeEncodeError:
+                            st.error("Deepgram API 키에 한글이나 특수문자가 포함되어 있습니다. 올바른 키를 입력해 주세요.")
+                            st.session_state.last_processed = None
+                            st.stop()
+
                         # Deepgram SDK 대신 직접 REST API 호출 (인코딩 문제 우회)
                         headers = {
-                            "Authorization": f"Token {dg_key}",
+                            "Authorization": f"Token {dg_key.strip()}",
                             "Content-Type": "application/octet-stream"
                         }
                         params = {
