@@ -10,6 +10,7 @@ import shutil
 import requests
 import streamlit.components.v1 as components
 import sys
+import re
 
 # --- Environment Setup (Windows Encoding Fix) ---
 if sys.stdout and sys.stdout.encoding != 'utf-8':
@@ -231,7 +232,7 @@ DEEPGRAM_API_KEY = get_api_key("DEEPGRAM_API_KEY", "deepgram_api_key.txt")
 # --- Prompt Construction ---
 today_date = st.sidebar.text_input("진료 날짜", value=time.strftime("%Y.%m.%d."))
 
-DEFAULT_PROMPT = f"""당신은 숙련된 한의사를 돕는 전문 의료 서기입니다.
+DEFAULT_PROMPT = """당신은 숙련된 한의사를 돕는 전문 의료 서기입니다.
 실제 진료 상황이나 구술 내용을 바탕으로 의료 차트를 작성하세요.
 
 [지침]
@@ -261,13 +262,13 @@ DEFAULT_PROMPT = f"""당신은 숙련된 한의사를 돕는 전문 의료 서�
      * 예: o/s - 2025.11.26. 자전거를 타고 가다가 넘어져서 수상함 (2026.03.16. 후방십자인대 파열 수술 시행)
 10. **[핵심] 임상 용어 및 ROM 작성 (필수 준수)**:
     - **[중요] 진단한 모든 통증 부위(목, 허리, 어깨 등)에 대하여, 음성이나 '패턴' 항목에서 특정 동작 시 통증에 대한 언급이 아예 없는 경우에만 차트 하단에 'ROM 제한없음.' 이라고 기본으로 출력하세요.** (예: 목 -> C-spine: ROM 제한없음. / 허리 -> L-spine: ROM 제한없음. / 어깨 -> Shoulder: ROM 제한없음.)
-    - 단, 음성에서 특정 동작(숙임, 젖힘, 돌림, 팔을 듦 등) 시 불편함/통증이 언급되거나, '패턴' 항목에 해당 동작 시 통증이 심해진다고 작성된 경우, 이는 ROM 제한을 의미하므로 이를 의학 용어(굴곡, 신전, 회전, 외전 등)로 변환하여 해당 제한 사항을 반드시 기입하세요. (예: "고개를 들 때 통증 심해짐" -> C-spine: ROM 신전 제한 / "고개를 숙이고 들 때 불편" -> C-spine: ROM 굴곡신전 제한 / "허리를 앞으로 굽힐 때 불편" -> L-spine: ROM 굴곡 제한 / "팔을 들어 올릴 때 통증 심해짐" -> Shoulder: ROM 외전 제한) 언급되지 않은 동작 제한을 임의로 추가하지 마세요.
+    - 단, 음성에서 특정 동작(숙임, 젖힘, 폄, 돌림, 팔을 듦 등) 시 불편함/통증이 언급되거나, '패턴' 항목에 해당 동작 시 통증이 심해진다고 작성된 경우, 이는 ROM 제한을 의미하므로 이를 의학 용어(숙임->굴곡, 젖힘/폄/듦->신전, 돌림->회전, 팔을 들어올림->외전 등)로 변환하여 해당 제한 사항을 반드시 기입하세요. (예: "고개를 들 때 통증 심해짐" -> C-spine: ROM 신전 제한 / "허리를 앞으로 굽힐 때 불편" -> L-spine: ROM 굴곡 제한 / "허리를 펼 때 아픔/통증 심해짐" -> L-spine: ROM 신전 제한 / "팔을 들어 올릴 때 통증 심해짐" -> Shoulder: ROM 외전 제한) 언급되지 않은 동작 제한을 임의로 추가하지 마세요.
     - **ROM 항목에는 순수한 이학적 검사 소견(가동범위 제한 등)만 작성하며, 통증에 대한 내용(예: "및 통증")은 절대 포함하지 마세요.**
     - ROM 제한 사항이 한 부위에 여러 개 있을 경우 슬래시(/)로 나누지 말고, 띄어쓰기로 묶어서 한 번에 간결하게 작성하세요.
     - 제한 사항 앞에는 반드시 'ROM'이라는 단어를 명시하세요. (형식 예시: C-spine: ROM 굴곡신전 좌우회전 제한 / Wrist: ROM 신전 제한)
     - 교통사고 상황 묘사 시 '후방에서 추돌한'에 국한되지 말고, '끼어들면서 추돌한', '정면 충돌한' 등 실제 상황을 정확히 반영하세요.
     - 사고 상황 묘사 시 '차량에 의해 추돌한'이라는 피동 표현을 쓰지 말고, '차량과 추돌한'과 같이 자연스러운 표현으로 작성하세요.
-11. 환자가 '어제', '오늘' 등으로 말하면 {today_date} 기준으로 정확한 날짜를 계산하여 기입하세요.
+11. 환자가 '어제', '오늘' 등으로 말하면 오늘 날짜 기준으로 정확한 날짜를 계산하여 'YYYY.MM.DD.' 형식으로 기입하세요. (예: 단순히 '10일'로 적지 말고 '2026.05.10.' 형태로 작성)
 12. **[어깨 통증 부위 세분화]** 어깨 통증(#Shoulder pain)의 경우 '부위' 섹션은 반드시 **'전면', '측면', '후면', '승모근'** 중 환자의 증상과 가장 일치하는 하나를 선택하여 작성하세요.
 13. **[지명 및 용어 보정]** 음성 인식 오류로 보이는 지명이나 단어는 문맥에 맞게 보정하세요. (예: 휘청 사거리 -> 시청사거리)
 
@@ -435,7 +436,9 @@ with left_col:
                                     with st.spinner("차트 작성 중..."):
                                         try:
                                             genai.configure(api_key=gemini_key)
-                                            model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
+                                            dynamic_prompt = re.sub(r'\d{4}\.\d{2}\.\d{2}\.?\s*기준으로', '오늘 날짜 기준으로', st.session_state.custom_prompt)
+                                            dynamic_prompt += f"\n\n[중요 시스템 설정] 오늘 진료 날짜는 {today_date} 입니다. 환자가 '어제', '오늘', '그저께' 등으로 말한 경우 반드시 이 날짜를 기준으로 계산하여 'YYYY.MM.DD.' 형식(예: 2026.05.10.)으로 기입하세요. 절대 '10일'처럼 일자만 적지 마세요."
+                                            model = genai.GenerativeModel("gemini-flash-latest", system_instruction=dynamic_prompt)
                                             response_ai = model.generate_content(transcript)
                                             st.session_state.chart = response_ai.text
                                             save_chart_log(st.session_state.get("user_id", "unknown"), transcript, response_ai.text)
@@ -473,7 +476,9 @@ with right_col:
             with st.spinner("AI 분석 중..."):
                 try:
                     genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-flash-latest", system_instruction=st.session_state.custom_prompt)
+                    dynamic_prompt = re.sub(r'\d{4}\.\d{2}\.\d{2}\.?\s*기준으로', '오늘 날짜 기준으로', st.session_state.custom_prompt)
+                    dynamic_prompt += f"\n\n[중요 시스템 설정] 오늘 진료 날짜는 {today_date} 입니다. 환자가 '어제', '오늘', '그저께' 등으로 말한 경우 반드시 이 날짜를 기준으로 계산하여 'YYYY.MM.DD.' 형식(예: 2026.05.10.)으로 기입하세요. 절대 '10일'처럼 일자만 적지 마세요."
+                    model = genai.GenerativeModel("gemini-flash-latest", system_instruction=dynamic_prompt)
                     response = model.generate_content(stt_text)
                     st.session_state.chart = response.text
                     save_chart_log(st.session_state.get("user_id", "unknown"), stt_text, response.text)
